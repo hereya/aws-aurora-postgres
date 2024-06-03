@@ -1,2 +1,2 @@
 iac: terraform
-infra: local
+infra: aws
