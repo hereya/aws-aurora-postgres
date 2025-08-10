@@ -54,8 +54,8 @@ db_version: "15.4"
 
 3. **Create production workspace and deploy**:
 ```bash
-# Create a production workspace with the production profile
-hereya workspace create prod --profile production
+# Create a production deployment workspace with the production profile
+hereya workspace create prod --profile production --deployment
 
 # Deploy to production workspace (automatically uses hereya/aws-aurora-postgres)
 hereya deploy -w prod
@@ -120,8 +120,8 @@ hereya up
 
 4. **Staging deployment**:
 ```bash
-# Create staging workspace
-hereya workspace create staging --profile staging
+# Create staging deployment workspace
+hereya workspace create staging --profile staging --deployment
 
 # Deploy to staging (automatically uses AWS Aurora)
 hereya deploy -w staging
@@ -129,8 +129,8 @@ hereya deploy -w staging
 
 5. **Production deployment**:
 ```bash
-# Create production workspace
-hereya workspace create production --profile production
+# Create production deployment workspace
+hereya workspace create production --profile production --deployment
 
 # Deploy to production (automatically uses AWS Aurora)
 hereya deploy -w production
