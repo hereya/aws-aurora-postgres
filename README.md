@@ -247,4 +247,4 @@ For issues or questions:
 
 ## License
 
-[Specify your license here]
+MIT
