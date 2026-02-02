@@ -29,16 +29,65 @@ data "aws_subnets" "private" {
   }
 }
 
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Lock in the decision made on first apply
+# Once set, this won't change even if external subnets are added/removed
+resource "terraform_data" "subnet_mode" {
+  input = length(data.aws_subnets.private.ids) >= 2 ? "existing" : "create"
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+}
+
+locals {
+  use_existing_subnets = terraform_data.subnet_mode.output == "existing"
+  # Use existing tagged subnets OR our created ones (never both)
+  private_subnet_ids = local.use_existing_subnets ? slice(data.aws_subnets.private.ids, 0, 2) : aws_subnet.private[*].id
+}
+
+# Create private subnets only if mode is "create"
+resource "aws_subnet" "private" {
+  count             = local.use_existing_subnets ? 0 : 2
+  vpc_id            = data.aws_vpc.default.id
+  cidr_block        = cidrsubnet(data.aws_vpc.default.cidr_block, 8, 200 + count.index)
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+
+  tags = {
+    Name = "aurora-private-${count.index}"
+    Tier = "private"
+  }
+}
+
+# Create a private route table (no IGW route = isolated)
+resource "aws_route_table" "private" {
+  count  = local.use_existing_subnets ? 0 : 1
+  vpc_id = data.aws_vpc.default.id
+
+  tags = {
+    Name = "aurora-private-rt"
+  }
+}
+
+# Associate new subnets with private route table
+resource "aws_route_table_association" "private" {
+  count          = local.use_existing_subnets ? 0 : 2
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private[0].id
+}
 
 resource "random_pet" "cluster" {
 }
 
 resource "aws_db_subnet_group" "private" {
   name       = random_pet.cluster.id
-  subnet_ids = data.aws_subnets.private.ids
+  subnet_ids = local.private_subnet_ids
 
   tags = {
-    Name = "Subnet Group for ${random_pet.cluster.id} Aurora Cluster "
+    Name = "Subnet Group for ${random_pet.cluster.id} Aurora Cluster"
   }
 }
 

@@ -13,5 +13,5 @@ variable "maximum_acu" {
 variable "db_version" {
   description = "The Aurora Serverless V2 engine version."
   type        = string
-  default     = "14.9"
+  default     = "17.6"
 }

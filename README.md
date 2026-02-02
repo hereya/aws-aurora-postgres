@@ -13,7 +13,7 @@ This package (`hereya/aws-aurora-postgres`) creates a fully managed Aurora Serve
 ## Prerequisites
 
 - AWS account with appropriate permissions for RDS, VPC, SSM, and EC2
-- VPC with private subnets tagged with `Tier=private`
+- Default VPC (private subnets are auto-created if none exist)
 - Hereya CLI installed
 
 ## Package Relationship
@@ -69,7 +69,7 @@ These parameters are configured in `hereyaconfig/hereyavars/hereya--postgres.yam
 |-----------|------|----------|-------------|---------|-------------|
 | `minimum_acu` | number | No | Minimum Aurora Capacity Units for auto-scaling | `0.5` | 0.5 - 128 |
 | `maximum_acu` | number | No | Maximum Aurora Capacity Units for auto-scaling | `4.0` | 0.5 - 128 |
-| `db_version` | string | No | PostgreSQL engine version | `14.9` | Check AWS for supported versions |
+| `db_version` | string | No | PostgreSQL engine version | `17.6` | Check AWS for supported versions |
 
 ### Aurora Capacity Units (ACUs)
 
@@ -102,7 +102,7 @@ profile: staging
 # AWS Aurora parameters for staging deployment
 minimum_acu: 0.5
 maximum_acu: 2.0
-db_version: "14.9"
+db_version: "17.6"
 ---
 # Production profile  
 profile: production
@@ -151,10 +151,13 @@ The connection string is securely stored in AWS Systems Manager Parameter Store 
 
 ### Network Configuration
 
-- **Subnet Group**: Uses private subnets tagged with `Tier=private`
+- **Subnet Group**: Automatically uses or creates private subnets
+  - If subnets tagged with `Tier=private` exist: uses them
+  - If no tagged subnets exist: creates 2 private subnets in different AZs
+  - Decision is locked on first apply for stability
 - **Security Group**: Configured for PostgreSQL port 5432
-  - ⚠️ Default allows access from 0.0.0.0/0 (modify for production)
-- **Availability**: Multi-AZ deployment across available private subnets
+  - Default allows access from 0.0.0.0/0 (modify for production)
+- **Availability**: Multi-AZ deployment across 2 private subnets
 
 ### Security Features
 
@@ -193,9 +196,9 @@ hereya flow down
 
 ### Common Issues
 
-1. **Subnet Not Found Error**
-   - Ensure your VPC has subnets tagged with `Tier=private`
-   - Verify subnets are in at least 2 availability zones
+1. **Subnet Creation Failed**
+   - Verify the default VPC has available CIDR space (uses 172.31.200.0/24 and 172.31.201.0/24)
+   - Ensure at least 2 availability zones are available in your region
 
 2. **Permission Denied**
    - Verify AWS credentials have permissions for:
@@ -236,7 +239,7 @@ hereya flow down
 This package requires:
 - AWS Provider for Terraform ~> 5.0
 - Random Provider for Terraform ~> 3.5
-- Existing VPC with properly tagged private subnets
+- Default VPC (private subnets auto-created if needed)
 
 ## Support
 
