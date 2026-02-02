@@ -154,7 +154,6 @@ The connection string is securely stored in AWS Systems Manager Parameter Store 
 - **Subnet Group**: Automatically uses or creates private subnets
   - If subnets tagged with `Tier=private` exist: uses them
   - If no tagged subnets exist: creates 2 private subnets in different AZs
-  - Decision is locked on first apply for stability
 - **Security Group**: Configured for PostgreSQL port 5432
   - Default allows access from 0.0.0.0/0 (modify for production)
 - **Availability**: Multi-AZ deployment across 2 private subnets

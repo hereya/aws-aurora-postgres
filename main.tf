@@ -33,18 +33,9 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Lock in the decision made on first apply
-# Once set, this won't change even if external subnets are added/removed
-resource "terraform_data" "subnet_mode" {
-  input = length(data.aws_subnets.private.ids) >= 2 ? "existing" : "create"
-
-  lifecycle {
-    ignore_changes = [input]
-  }
-}
-
 locals {
-  use_existing_subnets = terraform_data.subnet_mode.output == "existing"
+  # Decision based on whether tagged private subnets exist at plan time
+  use_existing_subnets = length(data.aws_subnets.private.ids) >= 2
   # Use existing tagged subnets OR our created ones (never both)
   private_subnet_ids = local.use_existing_subnets ? slice(data.aws_subnets.private.ids, 0, 2) : aws_subnet.private[*].id
 }
