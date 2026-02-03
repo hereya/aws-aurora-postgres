@@ -19,25 +19,13 @@ data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnets" "private" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  tags = {
-    Tier = "private"
-  }
-}
-
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
 locals {
-  # Decision based on whether tagged private subnets exist at plan time
-  use_existing_subnets = length(data.aws_subnets.private.ids) >= 2
-  # Use existing tagged subnets OR our created ones (never both)
-  private_subnet_ids = local.use_existing_subnets ? slice(data.aws_subnets.private.ids, 0, 2) : aws_subnet.private[*].id
+  use_existing_subnets = length(var.subnet_ids) >= 2
+  private_subnet_ids   = local.use_existing_subnets ? var.subnet_ids : aws_subnet.private[*].id
 }
 
 # Create private subnets only if mode is "create"
@@ -49,7 +37,6 @@ resource "aws_subnet" "private" {
 
   tags = {
     Name = "aurora-private-${count.index}"
-    Tier = "private"
   }
 }
 

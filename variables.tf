@@ -15,3 +15,9 @@ variable "db_version" {
   type        = string
   default     = "17.6"
 }
+
+variable "subnet_ids" {
+  description = "List of subnet IDs for the Aurora cluster. If not provided, new private subnets will be created."
+  type        = list(string)
+  default     = []
+}

@@ -13,7 +13,7 @@ This package (`hereya/aws-aurora-postgres`) creates a fully managed Aurora Serve
 ## Prerequisites
 
 - AWS account with appropriate permissions for RDS, VPC, SSM, and EC2
-- Default VPC (private subnets are auto-created if none exist)
+- Default VPC (or provide your own subnet IDs)
 - Hereya CLI installed
 
 ## Package Relationship
@@ -70,6 +70,7 @@ These parameters are configured in `hereyaconfig/hereyavars/hereya--postgres.yam
 | `minimum_acu` | number | No | Minimum Aurora Capacity Units for auto-scaling | `0.5` | 0.5 - 128 |
 | `maximum_acu` | number | No | Maximum Aurora Capacity Units for auto-scaling | `4.0` | 0.5 - 128 |
 | `db_version` | string | No | PostgreSQL engine version | `17.6` | Check AWS for supported versions |
+| `subnet_ids` | list(string) | No | List of subnet IDs for the Aurora cluster | `[]` | At least 2 subnets in different AZs |
 
 ### Aurora Capacity Units (ACUs)
 
@@ -151,12 +152,12 @@ The connection string is securely stored in AWS Systems Manager Parameter Store 
 
 ### Network Configuration
 
-- **Subnet Group**: Automatically uses or creates private subnets
-  - If subnets tagged with `Tier=private` exist: uses them
-  - If no tagged subnets exist: creates 2 private subnets in different AZs
+- **Subnet Group**: Uses provided subnets or creates new private subnets
+  - If `subnet_ids` provided: uses those subnets
+  - If no subnets provided: creates 2 private subnets in different AZs
 - **Security Group**: Configured for PostgreSQL port 5432
   - Default allows access from 0.0.0.0/0 (modify for production)
-- **Availability**: Multi-AZ deployment across 2 private subnets
+- **Availability**: Multi-AZ deployment across 2 subnets
 
 ### Security Features
 
@@ -238,7 +239,7 @@ hereya flow down
 This package requires:
 - AWS Provider for Terraform ~> 5.0
 - Random Provider for Terraform ~> 3.5
-- Default VPC (private subnets auto-created if needed)
+- Default VPC (or provide your own `subnet_ids`)
 
 ## Support
 
