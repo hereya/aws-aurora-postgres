@@ -16,6 +16,12 @@ variable "db_version" {
   default     = "17.6"
 }
 
+variable "require_ssl" {
+  description = "Whether to require SSL connections to the database."
+  type        = bool
+  default     = false
+}
+
 variable "subnet_ids" {
   description = "List of subnet IDs for the Aurora cluster. If not provided, new private subnets will be created."
   type        = list(string)

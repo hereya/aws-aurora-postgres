@@ -101,16 +101,27 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
+resource "aws_rds_cluster_parameter_group" "this" {
+  name   = "serverless-${random_pet.cluster.id}"
+  family = "aurora-postgresql${split(".", var.db_version)[0]}"
+
+  parameter {
+    name  = "rds.force_ssl"
+    value = var.require_ssl ? "1" : "0"
+  }
+}
+
 resource "aws_rds_cluster" "this" {
-  cluster_identifier     = "serverless-${random_pet.cluster.id}"
-  engine                 = "aurora-postgresql"
-  engine_mode            = "provisioned"
-  engine_version         = var.db_version
-  db_subnet_group_name   = aws_db_subnet_group.private.name
-  database_name          = random_pet.db_name.id
-  master_username        = random_pet.db_name.id
-  master_password        = random_password.db_password.result
-  skip_final_snapshot    = true
+  cluster_identifier              = "serverless-${random_pet.cluster.id}"
+  engine                          = "aurora-postgresql"
+  engine_mode                     = "provisioned"
+  engine_version                  = var.db_version
+  db_subnet_group_name            = aws_db_subnet_group.private.name
+  database_name                   = random_pet.db_name.id
+  master_username                 = random_pet.db_name.id
+  master_password                 = random_password.db_password.result
+  db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.this.name
+  skip_final_snapshot             = true
   vpc_security_group_ids = [
     aws_security_group.cluster.id,
   ]
@@ -133,7 +144,7 @@ resource "aws_rds_cluster_instance" "writer" {
 resource "aws_ssm_parameter" "db_url" {
   name  = "/rds/${random_pet.cluster.id}/db_url"
   type  = "SecureString"
-  value = "postgresql://${random_pet.db_name.id}:${urlencode(random_password.db_password.result)}@${aws_rds_cluster.this.endpoint}:${aws_rds_cluster.this.port}/${random_pet.db_name.id}"
+  value = "postgresql://${random_pet.db_name.id}:${urlencode(random_password.db_password.result)}@${aws_rds_cluster.this.endpoint}:${aws_rds_cluster.this.port}/${random_pet.db_name.id}?sslmode=${var.require_ssl ? "verify-full" : "disable"}"
 }
 
 output "DB_NAME" {
