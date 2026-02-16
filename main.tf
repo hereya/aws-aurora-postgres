@@ -38,13 +38,16 @@ data "aws_subnet" "existing" {
 locals {
   use_existing_subnets = length(var.subnet_ids) >= 2
   private_subnet_ids   = local.use_existing_subnets ? var.subnet_ids : aws_subnet.private[*].id
-  existing_cidrs       = [for s in data.aws_subnet.existing : s.cidr_block]
   available_offsets = [
     for n in range(2, 250) : n
-    if(
-      !contains(local.existing_cidrs, cidrsubnet(data.aws_vpc.default.cidr_block, 8, n)) &&
-      !contains(local.existing_cidrs, cidrsubnet(data.aws_vpc.default.cidr_block, 8, n + 1))
-    )
+    if !anytrue(flatten([
+      for s in data.aws_subnet.existing : [
+        cidrcontains(s.cidr_block, cidrhost(cidrsubnet(data.aws_vpc.default.cidr_block, 8, n), 0)),
+        cidrcontains(cidrsubnet(data.aws_vpc.default.cidr_block, 8, n), cidrhost(s.cidr_block, 0)),
+        cidrcontains(s.cidr_block, cidrhost(cidrsubnet(data.aws_vpc.default.cidr_block, 8, n + 1), 0)),
+        cidrcontains(cidrsubnet(data.aws_vpc.default.cidr_block, 8, n + 1), cidrhost(s.cidr_block, 0)),
+      ]
+    ]))
   ]
   subnet_offset = local.available_offsets[0]
 }
