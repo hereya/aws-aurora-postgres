@@ -158,6 +158,8 @@ resource "aws_rds_cluster" "this" {
   serverlessv2_scaling_configuration {
     max_capacity = var.maximum_acu
     min_capacity = var.minimum_acu
+    # Auto-pause (scale-to-zero) is only valid when min capacity is 0.
+    seconds_until_auto_pause = var.minimum_acu == 0 ? var.seconds_until_auto_pause : null
   }
 }
 

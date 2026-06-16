@@ -1,5 +1,5 @@
 name: hereya/aws-aurora-postgres
-version: 0.3.1
+version: 0.4.0
 description: "AWS Aurora Serverless V2 PostgreSQL deployment package for hereya/postgres"
 visibility: public # can be public or private
 iac: terraform
