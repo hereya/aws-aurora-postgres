@@ -139,6 +139,27 @@ resource "aws_rds_cluster_parameter_group" "this" {
   }
 }
 
+locals {
+  scale_to_zero = var.minimum_acu == 0
+
+  # A persistent TCP connection pool keeps the cluster awake, defeating
+  # scale-to-zero. So when scale-to-zero is on we enable the RDS Data API
+  # (connectionless) and expose the cluster/secret ARNs for it. The Data API
+  # is only supported on recent Aurora PostgreSQL minor versions; these are
+  # the per-major floors. See AWS Data API region/version availability docs.
+  data_api_min_minor = {
+    "13" = 11
+    "14" = 8
+    "15" = 3
+    "16" = 1
+    "17" = 4
+  }
+
+  db_major           = split(".", var.db_version)[0]
+  db_minor           = tonumber(try(split(".", var.db_version)[1], 0))
+  data_api_supported = contains(keys(local.data_api_min_minor), local.db_major) && local.db_minor >= lookup(local.data_api_min_minor, local.db_major, 9999)
+}
+
 resource "aws_rds_cluster" "this" {
   cluster_identifier              = "serverless-${random_pet.cluster.id}"
   engine                          = "aurora-postgresql"
@@ -150,6 +171,9 @@ resource "aws_rds_cluster" "this" {
   master_password                 = random_password.db_password.result
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.this.name
   skip_final_snapshot             = true
+  # Enable the connectionless Data API only when scaling to zero, so a
+  # consumer's connection pool can't keep the cluster from pausing.
+  enable_http_endpoint = local.scale_to_zero
   vpc_security_group_ids = [
     aws_security_group.cluster.id,
   ]
@@ -160,6 +184,13 @@ resource "aws_rds_cluster" "this" {
     min_capacity = var.minimum_acu
     # Auto-pause (scale-to-zero) is only valid when min capacity is 0.
     seconds_until_auto_pause = var.minimum_acu == 0 ? var.seconds_until_auto_pause : null
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !local.scale_to_zero || local.data_api_supported
+      error_message = "Scale-to-zero (minimum_acu = 0) relies on the RDS Data API, which is only supported on Aurora PostgreSQL >= 13.11, 14.8, 15.3, 16.1, or 17.4. db_version = \"${var.db_version}\" does not support it; raise db_version or set minimum_acu > 0."
+    }
   }
 }
 
@@ -177,12 +208,80 @@ resource "aws_ssm_parameter" "db_url" {
   value = "postgresql://${random_pet.db_name.id}:${urlencode(random_password.db_password.result)}@${aws_rds_cluster.this.endpoint}:${aws_rds_cluster.this.port}/${random_pet.db_name.id}?sslmode=${var.require_ssl ? "verify-full" : "disable"}"
 }
 
+# The Data API authenticates via a Secrets Manager secret (not a raw password),
+# so we provision one with the master credentials when scale-to-zero is on.
+resource "aws_secretsmanager_secret" "master" {
+  count = local.scale_to_zero ? 1 : 0
+  name  = "rds-${random_pet.cluster.id}-master"
+}
+
+resource "aws_secretsmanager_secret_version" "master" {
+  count     = local.scale_to_zero ? 1 : 0
+  secret_id = aws_secretsmanager_secret.master[0].id
+  secret_string = jsonencode({
+    username = random_pet.db_name.id
+    password = random_password.db_password.result
+    engine   = "postgres"
+    host     = aws_rds_cluster.this.endpoint
+    port     = aws_rds_cluster.this.port
+    dbname   = random_pet.db_name.id
+  })
+}
+
+# Expose the secret ARN via SSM as a plain String so Hereya passes the ARN
+# itself to consumers (for the Data API) rather than resolving the contents.
+resource "aws_ssm_parameter" "secret_arn" {
+  count = local.scale_to_zero ? 1 : 0
+  name  = "/rds/${random_pet.cluster.id}/secret_arn"
+  type  = "String"
+  value = aws_secretsmanager_secret.master[0].arn
+}
+
 output "DB_NAME" {
   value = random_pet.db_name.id
 }
 
 data "aws_region" "current" {}
 
+# Standard connection string — always available, backward compatible.
 output "POSTGRES_URL" {
   value = aws_ssm_parameter.db_url.arn
+}
+
+# Data API outputs — populated only when scale-to-zero is active. Consumers
+# use these with a connectionless client (e.g. drizzle-orm/aws-data-api/pg).
+output "CLUSTER_ARN" {
+  value = local.scale_to_zero ? aws_rds_cluster.this.arn : null
+}
+
+output "SECRET_ARN" {
+  value = local.scale_to_zero ? aws_ssm_parameter.secret_arn[0].arn : null
+}
+
+output "AWS_REGION" {
+  value = data.aws_region.current.name
+}
+
+output "IAM_POLICY_AURORA_DATA_API" {
+  value = local.scale_to_zero ? jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-data:ExecuteStatement",
+          "rds-data:BatchExecuteStatement",
+          "rds-data:BeginTransaction",
+          "rds-data:CommitTransaction",
+          "rds-data:RollbackTransaction",
+        ]
+        Resource = aws_rds_cluster.this.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = aws_secretsmanager_secret.master[0].arn
+      },
+    ]
+  }) : null
 }

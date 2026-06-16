@@ -57,9 +57,12 @@ terraform apply tfplan
    - SSM parameter storing encrypted connection URL at `/rds/{cluster-id}/db_url`
 
 2. **variables.tf**: Input parameters for customization:
-   - `minimum_acu`: Min Aurora Compute Units (default: 0.5)
+   - `minimum_acu`: Min Aurora Compute Units (default: 0.5). Set to `0` to enable scale-to-zero.
    - `maximum_acu`: Max Aurora Compute Units (default: 4.0)
-   - `db_version`: PostgreSQL version (default: "14.9")
+   - `seconds_until_auto_pause`: Idle seconds before scaling to zero, only used when `minimum_acu` is 0 (default: 300, range 300-86400)
+   - `db_version`: PostgreSQL version (default: "17.6")
+   - `require_ssl`: Require SSL connections (default: false)
+   - `subnet_ids`: Optional user-provided subnets (default: [], creates private subnets if empty)
 
 3. **hereyarc.yaml**: Hereya configuration specifying:
    - Infrastructure as Code tool: Terraform
@@ -70,7 +73,14 @@ terraform apply tfplan
 - **Resource Naming**: Uses `random_pet` for unique cluster identification
 - **Security**: Passwords generated via `random_password` and stored encrypted in SSM
 - **Networking**: Database placed in private subnets identified by tags
-- **Outputs**: Exposes `DB_NAME` and `POSTGRES_URL` (SSM parameter ARN)
+- **Outputs**: Always exposes `DB_NAME` and `POSTGRES_URL` (SSM parameter ARN). When scale-to-zero is active (`minimum_acu == 0`), also exposes `CLUSTER_ARN`, `SECRET_ARN`, `AWS_REGION`, and `IAM_POLICY_AURORA_DATA_API` for Data API consumers (null otherwise).
+
+### Scale-to-Zero & Data API
+
+- Setting `minimum_acu = 0` sets `seconds_until_auto_pause` on the cluster so it auto-pauses when idle.
+- A persistent connection pool keeps the cluster awake and defeats auto-pause, so scale-to-zero also enables the **RDS Data API** (`enable_http_endpoint`) and provisions a Secrets Manager secret with the master credentials (the Data API authenticates via a secret, not a raw password). Consumers should use a connectionless client like `drizzle-orm/aws-data-api/pg`.
+- The Data API requires Aurora PostgreSQL >= 13.11 / 14.8 / 15.3 / 16.1 / 17.4. A `lifecycle precondition` on the cluster blocks `apply` when `minimum_acu = 0` is combined with an unsupported `db_version`.
+- `local.scale_to_zero` and `local.data_api_supported` (in main.tf) drive all of this conditional behavior; the Data API resources/outputs use `count` so the default (always-on) path is unchanged and backward compatible.
 
 ### Important Dependencies
 
@@ -96,6 +106,7 @@ postgresql://{username}:{password}@{endpoint}:{port}/{database}
 ### Cluster Configuration
 - Engine: `aurora-postgresql` with serverless V2
 - Auto scaling between minimum and maximum ACUs
+- Scale-to-zero (auto-pause) when `minimum_acu == 0`, with the Data API enabled (see above)
 - Skip final snapshot enabled (modify for production use)
 - No explicit encryption configuration (relies on defaults)
 

@@ -6,6 +6,7 @@ A Hereya package that provisions an AWS Aurora Serverless V2 PostgreSQL cluster 
 
 This package (`hereya/aws-aurora-postgres`) creates a fully managed Aurora Serverless V2 PostgreSQL database cluster on AWS, including:
 - Aurora Serverless V2 cluster with configurable compute scaling
+- Optional **scale-to-zero** (auto-pause when idle) — see [Scale-to-Zero & Data API](#scale-to-zero--data-api)
 - Automatic password generation and secure storage in AWS Systems Manager (SSM)
 - VPC security group configuration for database access
 - Database subnet group using private subnets
@@ -67,8 +68,9 @@ These parameters are configured in `hereyaconfig/hereyavars/hereya--postgres.yam
 
 | Parameter | Type | Required | Description | Default | Valid Range |
 |-----------|------|----------|-------------|---------|-------------|
-| `minimum_acu` | number | No | Minimum Aurora Capacity Units for auto-scaling | `0.5` | 0.5 - 128 |
+| `minimum_acu` | number | No | Minimum Aurora Capacity Units for auto-scaling. Set to `0` to enable [scale-to-zero](#scale-to-zero--data-api). | `0.5` | 0 or 0.5 - 128 |
 | `maximum_acu` | number | No | Maximum Aurora Capacity Units for auto-scaling | `4.0` | 0.5 - 128 |
+| `seconds_until_auto_pause` | number | No | Idle seconds before the cluster scales to zero. Only applies when `minimum_acu` is `0`. | `300` | 300 - 86400 |
 | `db_version` | string | No | PostgreSQL engine version | `17.6` | Check AWS for supported versions |
 | `require_ssl` | bool | No | Require SSL connections to the database | `false` | `true` or `false` |
 | `subnet_ids` | list(string) | No | List of subnet IDs for the Aurora cluster | `[]` | At least 2 subnets in different AZs |
@@ -149,6 +151,17 @@ After deployment, this package exports environment variables that are automatica
 
 The connection string is securely stored in AWS Systems Manager Parameter Store and automatically decrypted when your application runs.
 
+When **scale-to-zero is active** (`minimum_acu: 0`), the package additionally enables the RDS Data API and exports these (they are empty otherwise):
+
+| Environment Variable | Description |
+|---------------------|-------------|
+| `CLUSTER_ARN` | ARN of the Aurora cluster — pass to the Data API as `resourceArn` |
+| `SECRET_ARN` | SSM parameter holding the ARN of the Secrets Manager secret with the master credentials — pass to the Data API as `secretArn` |
+| `AWS_REGION` | Region the cluster is deployed in |
+| `IAM_POLICY_AURORA_DATA_API` | JSON IAM policy granting Data API + secret access, scoped to this cluster |
+
+See [Scale-to-Zero & Data API](#scale-to-zero--data-api) for why these matter and how to consume them.
+
 ## Infrastructure Details
 
 ### Network Configuration
@@ -174,6 +187,43 @@ Aurora Serverless V2 automatically scales based on database load:
 - Scales down during periods of low activity
 - Maintains connections during scaling operations
 - Billed per ACU-hour based on actual usage
+
+## Scale-to-Zero & Data API
+
+By default (`minimum_acu: 0.5`) the cluster stays warm and is billed continuously. Setting `minimum_acu: 0` enables **scale-to-zero**: after `seconds_until_auto_pause` of inactivity (default 5 minutes) the cluster pauses and compute billing stops until the next request.
+
+**Why the Data API is enabled automatically.** Aurora only pauses when there are **zero connections** for the entire idle window. A normal PostgreSQL client (e.g. a `node-postgres` pool) holds connections open, which keeps the cluster awake and defeats scale-to-zero. To avoid this, when `minimum_acu: 0` the package enables the **RDS Data API** — a connectionless, HTTPS-based interface — and exports `CLUSTER_ARN`, `SECRET_ARN`, `AWS_REGION`, and `IAM_POLICY_AURORA_DATA_API`. Your app should use a connectionless client against the Data API (e.g. [`drizzle-orm/aws-data-api/pg`](https://orm.drizzle.team/docs/connect-aws-data-api-pg)) so nothing keeps the cluster from pausing.
+
+> **The plain `POSTGRES_URL` connection string still works in scale-to-zero mode, but a connection pool against it will keep the cluster awake — use the Data API outputs to actually realize the savings.**
+
+**Engine version requirement.** The Data API is only supported on recent Aurora PostgreSQL minor versions: **13.11+, 14.8+, 15.3+, 16.1+, or 17.4+**. If you set `minimum_acu: 0` on an unsupported `db_version`, the apply fails fast with a validation error telling you to raise `db_version` or set `minimum_acu > 0`.
+
+**Trade-off.** A paused cluster has a cold-start delay (~15–30s) on the first request after idling. Tune `seconds_until_auto_pause` to match how bursty your traffic is.
+
+Example (`hereyaconfig/hereyavars/hereya--postgres.yaml`):
+
+```yaml
+---
+profile: production
+db_version: "17.6"          # must support the Data API (see above)
+minimum_acu: 0              # enable scale-to-zero
+seconds_until_auto_pause: 300
+```
+
+Drizzle wiring on the consuming app:
+
+```ts
+import { drizzle } from 'drizzle-orm/aws-data-api/pg';
+import { RDSDataClient } from '@aws-sdk/client-rds-data';
+
+export const db = drizzle(new RDSDataClient({ region: process.env.AWS_REGION }), {
+  resourceArn: process.env.CLUSTER_ARN!,
+  secretArn: process.env.SECRET_ARN!,
+  database: process.env.DB_NAME!,
+});
+```
+
+The app's execution role needs the permissions in `IAM_POLICY_AURORA_DATA_API`.
 
 ## Flow Commands
 
@@ -232,8 +282,7 @@ hereya flow down
 
 - Use lower minimum_acu for development/testing environments
 - Monitor actual ACU usage to right-size maximum_acu
-- Consider Aurora Serverless V1 for intermittent workloads
-- Enable auto-pause for development databases (requires code modification)
+- For intermittent workloads, set `minimum_acu: 0` to enable [scale-to-zero](#scale-to-zero--data-api) so you stop paying for compute while idle
 
 ## Dependencies
 
