@@ -33,6 +33,12 @@ variable "require_ssl" {
   default     = false
 }
 
+variable "deletion_protection" {
+  description = "Whether to block deletion of the Aurora cluster. Must be set to false, and applied, before the cluster can be destroyed."
+  type        = bool
+  default     = false
+}
+
 variable "subnet_ids" {
   description = "List of subnet IDs for the Aurora cluster. If not provided, new private subnets will be created."
   type        = list(string)

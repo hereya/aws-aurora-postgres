@@ -62,6 +62,7 @@ terraform apply tfplan
    - `seconds_until_auto_pause`: Idle seconds before scaling to zero, only used when `minimum_acu` is 0 (default: 300, range 300-86400)
    - `db_version`: PostgreSQL version (default: "17.6")
    - `require_ssl`: Require SSL connections (default: false)
+   - `deletion_protection`: Block cluster deletion (default: false)
    - `subnet_ids`: Optional user-provided subnets (default: [], creates private subnets if empty)
 
 3. **hereyarc.yaml**: Hereya configuration specifying:

@@ -73,6 +73,7 @@ These parameters are configured in `hereyaconfig/hereyavars/hereya--postgres.yam
 | `seconds_until_auto_pause` | number | No | Idle seconds before the cluster scales to zero. Only applies when `minimum_acu` is `0`. | `300` | 300 - 86400 |
 | `db_version` | string | No | PostgreSQL engine version | `17.6` | Check AWS for supported versions |
 | `require_ssl` | bool | No | Require SSL connections to the database | `false` | `true` or `false` |
+| `deletion_protection` | bool | No | Block deletion of the Aurora cluster. Set it to `false` and apply before destroying the cluster | `false` | `true` or `false` |
 | `subnet_ids` | list(string) | No | List of subnet IDs for the Aurora cluster | `[]` | At least 2 subnets in different AZs |
 
 ### Aurora Capacity Units (ACUs)

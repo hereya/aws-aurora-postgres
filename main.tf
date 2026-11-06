@@ -171,6 +171,7 @@ resource "aws_rds_cluster" "this" {
   master_password                 = random_password.db_password.result
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.this.name
   skip_final_snapshot             = true
+  deletion_protection             = var.deletion_protection
   # Enable the connectionless Data API only when scaling to zero, so a
   # consumer's connection pool can't keep the cluster from pausing.
   enable_http_endpoint = local.scale_to_zero
