@@ -115,6 +115,16 @@ resource "aws_rds_cluster" "this" {
     aws_security_group.cluster.id,
   ]
 
+  # 0.2.3: opt-in hardening. Defaults reproduce 0.2.2 exactly (unencrypted,
+  # 1-day backups, no deletion protection), so upgrading 0.2.2 -> 0.2.3 with no
+  # new values plans ZERO changes. CAUTION: storage_encrypted / kms_key_id force
+  # cluster REPLACEMENT if they differ from the running cluster — set them only
+  # to describe a cluster that is already encrypted (restored from a snapshot).
+  storage_encrypted       = var.storage_encrypted
+  kms_key_id              = var.kms_key_id
+  backup_retention_period = var.backup_retention_period
+  deletion_protection     = var.deletion_protection
+
 
   serverlessv2_scaling_configuration {
     max_capacity = var.maximum_acu
